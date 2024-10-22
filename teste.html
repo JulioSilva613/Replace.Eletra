@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Replace Eletra</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        h1 {
+            color: #1a1a1a;
+            text-align: center;
+        }
+        #tabs {
+            display: flex;
+            justify-content: center;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            margin-right: 10px;
+            background-color: #2c3e50;
+            color: white;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        .tab:hover {
+            background-color: #34495e;
+        }
+        .active {
+            font-weight: bold;
+            background-color: #1abc9c;
+        }
+        .hidden {
+            display: none;
+        }
+        input, button, select, textarea {
+            display: block;
+            width: calc(100% - 22px);
+            margin: 10px auto;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button {
+            background-color: #1abc9c;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #16a085;
+        }
+        select {
+            background-color: #fff;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+        #time {
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 18px;
+            color: #7f8c8d;
+        }
+
+        /* Estilos para a modal */
+        .modal {
+            display: none; /* Escondida por padrão */
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0, 0, 0, 0.4); /* Fundo escuro */
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%; /* Largura da modal */
+        }
+
+        .modal-button {
+            margin: 5px;
+            padding: 10px 20px;
+            border: none;
+            background-color: #1abc9c;
+            color: white;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Replace Eletra</h1>
+    <div id="time"></div>
+    
+    <div id="tabs">
+        <div class="tab active" onclick="showTab('login')">Login</div>
+        <div class="tab" onclick="showTab('trocar')" id="trocarTab">Trocar</div>
+    </div>
+
+    <div id="login" class="tab-content">
+        <input type="text" id="op" placeholder="OP" required>
+        <select id="turno">
+            <option value="">Selecione o Turno</option>
+            <option value="1° Turno">1° Turno</option>
+            <option value="2° Turno">2° Turno</option>
+            <option value="3° Turno">3° Turno</option>
+        </select>
+        <input type="text" id="operador" placeholder="Nome do Operador" required>
+        <select id="linha" onchange="updateMachines()">
+            <option value="">Selecione a Linha</option>
+            <option value="SMT01">SMT01</option>
+            <option value="SMT02">SMT02</option>
+            <option value="SMT03">SMT03</option>
+        </select>
+        <button id="loginBtn" onclick="login()">Logar</button>
+    </div>
+
+    <div id="trocar" class="tab-content hidden">
+        <div id="step1">
+            <select id="maquina">
+                <option value="">Selecione a Máquina</option>
+            </select>
+            <input type="text" id="feeder" placeholder="Número do Feeder">
+            <button onclick="nextStep(1)">Próximo</button>
+        </div>
+
+        <div id="step2" class="hidden">
+            <input type="file" id="imageAnterior" accept="image/*" capture="camera" placeholder="Imagem do componente anterior">
+            <input type="file" id="imageAtual" accept="image/*" capture="camera" placeholder="Imagem do componente novo">
+            <button onclick="nextStep(2)">Próximo</button>
+        </div>
+
+        <div id="step3" class="hidden">
+            <input type="number" id="quantidade" placeholder="Quantidade" required>
+            <label>
+                <input type="checkbox" id="cheio" onchange="toggleQuantidade()"> Cheio
+            </label>
+            <textarea id="observacao" placeholder="Observações"></textarea>
+            <button onclick="finalizarTroca()">Finalizar Troca</button>
+        </div>
+    </div>
+
+    <!-- Modal para opções de ação -->
+    <div id="actionModal" class="modal">
+        <div class="modal-content">
+            <p>O que você deseja fazer com o arquivo gerado?</p>
+            <button class="modal-button" onclick="downloadPDF()">Baixar no dispositivo</button>
+            <button class="modal-button" onclick="sharePDF()">Compartilhar</button>
+            <button class="modal-button" onclick="closeModal()">Cancelar</button>
+        </div>
+    </div>
+
+    <script>
+        const { jsPDF } = window.jspdf;
+        let loggedIn = false;
+        let pdfBlob; // Para armazenar o PDF gerado
+
+        function showTab(tab) {
+            document.getElementById('login').classList.toggle('hidden', tab !== 'login');
+            document.getElementById('trocar').classList.toggle('hidden', tab !== 'trocar');
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            const activeTab = document.querySelector(`.tab:contains(${tab})`);
+            if (activeTab) {
+                activeTab.classList.add('active');
+            }
+        }
+
+        function validateLoginFields() {
+            const op = document.getElementById('op').value;
+            const turno = document.getElementById('turno').value;
+            const operador = document.getElementById('operador').value;
+            const linha = document.getElementById('linha').value;
+            return op && turno && operador && linha;
+        }
+
+        function login() {
+            if (validateLoginFields()) {
+                loggedIn = true;
+                showTab('trocar');
+                document.getElementById('trocarTab').style.pointerEvents = 'auto';
+            } else {
+                alert('Por favor, preencha todos os campos obrigatórios.');
+            }
+        }
+
+        function updateMachines() {
+            const linha = document.getElementById('linha').value;
+            const maquinaSelect = document.getElementById('maquina');
+            maquinaSelect.innerHTML = '<option value="">Selecione a Máquina</option>';
+            const maquinas = {
+                SMT01: ['SM471A', 'SM481B', 'SM482A'],
+                SMT02: ['SM471C', 'SM481D', 'SM481C', 'SM482B'],
+                SMT03: ['SM471B', 'SM481A', 'SM482C']
+            };
+            maquinas[linha]?.forEach(maquina => {
+                const option = document.createElement('option');
+                option.value = maquina;
+                option.textContent = maquina;
+                maquinaSelect.appendChild(option);
+            });
+        }
+
+        function nextStep(step) {
+            if (step === 1) {
+                const maquina = document.getElementById('maquina').value;
+                const feeder = document.getElementById('feeder').value;
+
+                if (!maquina || !feeder) {
+                    alert('Por favor, preencha todos os campos obrigatórios.');
+                    return;
+                }
+
+                document.getElementById('step1').classList.add('hidden');
+                document.getElementById('step2').classList.remove('hidden');
+            } else if (step === 2) {
+                const imageAnterior = document.getElementById('imageAnterior').files.length;
+                const imageAtual = document.getElementById('imageAtual').files.length;
+
+                if (imageAnterior === 0 || imageAtual === 0) {
+                    alert('Por favor, tire fotos de ambos os componentes.');
+                    return;
+                }
+
+                document.getElementById('step2').classList.add('hidden');
+                document.getElementById('step3').classList.remove('hidden');
+            }
+        }
+
+        async function finalizarTroca() {
+            if (!loggedIn) return;
+
+            const maquina = document.getElementById('maquina').value;
+            const feeder = document.getElementById('feeder').value;
+            const quantidadeInput = document.getElementById('quantidade');
+            const cheioChecked = document.getElementById('cheio').checked;
+            let quantidade;
+
+            if (cheioChecked) {
+                quantidade = 'Cheio';
+            } else {
+                quantidade = quantidadeInput.value;
+                if (!quantidade) {
+                    alert('Por favor, preencha a quantidade.');
+                    return;
+                }
+            }
+
+            const op = document.getElementById('op').value;
+            const dataHora = new Date().toLocaleString().replace(/[\/:]/g, '-');
+            const turno = document.getElementById('turno').value;
+            const linha = document.getElementById('linha').value;
+            const operador = document.getElementById('operador').value;
+            const observacao = document.getElementById('observacao').value;
+
+            const pdf = new jsPDF();
+            pdf.text('Registro de Troca de Componentes', 10, 10);
+            pdf.text(`OP: ${op}`, 10, 20);
+            pdf.text(`Data e Hora: ${new Date().toLocaleString()}`, 10, 30);
+            pdf.text(`Turno: ${turno}`, 10, 40);
+            pdf.text(`Linha: ${linha}`, 10, 50);
+            pdf.text(`Operador: ${operador}`, 10, 60);
+            pdf.text(`Máquina: ${maquina}`, 10, 70);
+            pdf.text(`Feeder: ${feeder}`, 10, 80);
+            pdf.text(`Quantidade: ${quantidade}`, 10, 90);
+            pdf.text(`Observação: ${observacao}`, 10, 100);
+
+            const imageAnteriorFile = document.getElementById('imageAnterior').files[0];
+            const imageAtualFile = document.getElementById('imageAtual').files[0];
+
+            if (imageAnteriorFile && imageAtualFile) {
+                const imageAnteriorDataURL = await readFileAsDataURL(imageAnteriorFile);
+                const imageAtualDataURL = await readFileAsDataURL(imageAtualFile);
+
+                pdf.text('Componente Anterior:', 10, 110);
+                pdf.text('Componente Atual:', 110, 110);
+                pdf.addImage(imageAnteriorDataURL, 'JPEG', 10, 120, 80, 80);
+                pdf.addImage(imageAtualDataURL, 'JPEG', 110, 120, 80, 80);
+            }
+
+            pdfBlob = pdf.output('blob'); // Armazena o PDF gerado
+            openModal(); // Abre a modal com as opções
+            resetFields();
+        }
+
+        function openModal() {
+            document.getElementById('actionModal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('actionModal').style.display = 'none';
+        }
+
+        function downloadPDF() {
+            const fileName = `OP-${document.getElementById('op').value}-${new Date().toLocaleString().replace(/[\/:]/g, '-')}.pdf`;
+            const url = URL.createObjectURL(pdfBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            closeModal(); // Fecha a modal após download
+        }
+
+        async function sharePDF() {
+            const fileName = `OP-${document.getElementById('op').value}-${new Date().toLocaleString().replace(/[\/:]/g, '-')}.pdf`;
+            const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+
+            try {
+                if (navigator.share) {
+                    await navigator.share({
+                        title: 'Registro de Troca de Componentes',
+                        files: [file]
+                    });
+                } else {
+                    alert('Compartilhamento não suportado neste dispositivo.');
+                }
+            } catch (error) {
+                alert('Erro ao compartilhar o arquivo: ' + error.message);
+            }
+            closeModal(); // Fecha a modal após tentar compartilhar
+        }
+
+        function resetFields() {
+            document.getElementById('maquina').value = '';
+            document.getElementById('feeder').value = '';
+            document.getElementById('imageAnterior').value = '';
+            document.getElementById('imageAtual').value = '';
+            document.getElementById('quantidade').value = '';
+            document.getElementById('cheio').checked = false;
+            document.getElementById('observacao').value = '';
+            document.getElementById('step1').classList.remove('hidden');
+            document.getElementById('step2').classList.add('hidden');
+            document.getElementById('step3').classList.add('hidden');
+        }
+
+        function readFileAsDataURL(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('time').textContent = now.toLocaleString();
+        }
+
+        function toggleQuantidade() {
+            const quantidadeInput = document.getElementById('quantidade');
+            quantidadeInput.disabled = document.getElementById('cheio').checked;
+            if (document.getElementById('cheio').checked) {
+                quantidadeInput.value = '';
+            }
+        }
+
+        setInterval(updateTime, 1000);
+    </script>
+</body>
+</html>
